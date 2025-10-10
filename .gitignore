@@ -17,9 +17,13 @@
 # Mono auto generated files
 mono_crash.*
 
+# Python auto generated files
+*.egg-info/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
+[Dd]ist/
 [Rr]elease/
 [Rr]eleases/
 x64/
