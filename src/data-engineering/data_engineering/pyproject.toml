@@ -1,0 +1,10 @@
+[project]
+name = "data_engineering"
+version = "0.1.0"
+description = "Data engineering samples using ArcGIS"
+readme = "README.md"
+requires-python = ">=3.11, <3.12"
+dependencies = [
+    "arcgis>=2.4",
+    "arcgis-mapping>=4.31",
+]
