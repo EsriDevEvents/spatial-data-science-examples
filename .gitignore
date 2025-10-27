@@ -21,6 +21,7 @@ mono_crash.*
 *.egg-info/
 
 # Build results
+[Bb]uild/
 [Dd]ebug/
 [Dd]ebugPublic/
 [Dd]ist/

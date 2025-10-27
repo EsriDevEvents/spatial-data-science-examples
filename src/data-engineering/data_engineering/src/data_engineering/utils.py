@@ -1,9 +1,10 @@
 from arcgis.gis import GIS
 from arcgis.gis import Item
-from arcgis.features import FeatureLayer, FeatureSet, GeoAccessor
+from arcgis.features import FeatureLayer
+import pandas as pd
 
 
-def fetch_charging_stations(gis: GIS, max_record_count: int = 1000) -> GeoAccessor:
+def fetch_charging_stations(gis: GIS, max_record_count: int = 1000) -> pd.DataFrame:
     """Fetches the charging stations from the ArcGIS Online feature service.
 
     Args:
@@ -17,7 +18,7 @@ def fetch_charging_stations(gis: GIS, max_record_count: int = 1000) -> GeoAccess
     feature_sdf = feature_layer.query(where="1=1", out_fields="*", return_all_records=False, result_record_count=max_record_count, as_df=True)
     return feature_sdf
 
-def fetch_traffic_accidents(gis: GIS, max_record_count: int = 1000) -> GeoAccessor:
+def fetch_traffic_accidents(gis: GIS, max_record_count: int = 1000) -> pd.DataFrame:
     """Fetches the traffic accidents from the ArcGIS Online feature service.
 
     Args:
