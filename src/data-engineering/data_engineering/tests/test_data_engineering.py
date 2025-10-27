@@ -1,5 +1,6 @@
 from arcgis.gis import GIS
 from data_engineering.utils import fetch_charging_stations, fetch_traffic_accidents
+import os
 import pandas as pd
 import unittest
 
@@ -7,7 +8,14 @@ import unittest
 class TestDataEngineering(unittest.TestCase):
 
     def setUp(self):
-        self._gis = GIS()
+        api_key = os.getenv("ARCGIS_API_KEY")
+        if not api_key:
+            raise ValueError("ARCGIS_API_KEY environment variable is not set!")
+        
+        self._gis = GIS(api_key=api_key)
+        self._traffic_data_filepath = os.getenv("TRAFFIC_DATA_FILE")
+        if not self._traffic_data_filepath:
+            raise ValueError("TRAFFIC_DATA_FILE environment variable is not set!")
     
     def test_living_atlas(self):
         charging_stations: pd.DataFrame = fetch_charging_stations(self._gis, max_record_count=10)

@@ -4,7 +4,11 @@ from urban_traffic.utils import fetch_traffic_data
 import os
 
 
-gis = GIS()
+api_key = os.getenv("ARCGIS_API_KEY")
+if not api_key:
+    raise ValueError("ARCGIS_API_KEY environment variable is not set!")
+
+gis = GIS(api_key=api_key)
 
 def explore_data():
     charging_stations = fetch_charging_stations(gis)
