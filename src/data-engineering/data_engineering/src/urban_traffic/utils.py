@@ -30,6 +30,7 @@ def read_traffic_features(filepath: str, lon: float, lat: float, meters: float) 
 
     buffered_geometry = buffer_result[0]
     try:
+        # See: https://pro.arcgis.com/de/pro-app/latest/arcpy/data-access/searchcursor-class.htm
         from arcpy.da import SearchCursor
 
         new_records = []
