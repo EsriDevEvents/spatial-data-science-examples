@@ -21,3 +21,12 @@ Whether we're analyzing:
 
 ArcGIS empowers us to bring these dimensions together — bridging data silos and revealing insights that are only possible when we think spatially.
 
+### Running the samples
+To run the sample scripts, make sure the required environment variables are set. For development purposes, you can define these variables in a `.env` file located at the root of the repository.
+
+```
+ARCGIS_API_KEY=<secret-api-key>
+PYTHONPATH=./src/data-engineering/data_engineering/src
+TRAFFIC_DATA_FILE="/data/Frankfurt-Main-traffic.sqlite"
+TRAFFIC_FEATURES="/temp/Spatial_Data_Science.gdb/Weekday_Traffic_2025"
+```
