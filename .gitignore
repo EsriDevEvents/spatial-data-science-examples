@@ -11,6 +11,9 @@
 *.sln.docstates
 *.env
 
+# Jupyter Notebook files
+.ipynb_checkpoints/
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 

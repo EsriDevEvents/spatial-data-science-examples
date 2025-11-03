@@ -5,6 +5,19 @@ import pandas as pd
 from sqlite3 import connect
 
 
+def prepare_traffic(traffic_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepares the traffic DataFrame for analysis by converting data types.
+
+    Args:
+        traffic_df (pd.DataFrame): The traffic DataFrame to prepare.
+
+    Returns:
+        pd.DataFrame: The prepared traffic DataFrame.
+    """
+    traffic_df["trip_time"] = pd.to_datetime(traffic_df["trip_time"], format="%Y-%m-%dT%H:%M:%S")
+    return traffic_df
+
 def read_traffic_sql(filepath: str, limit: int) -> pd.DataFrame:
     with connect(filepath) as connection:
         if limit < 1:
