@@ -64,7 +64,6 @@ def convert_internal_dict(obj):
     Handles:
     - Nested dicts
     - Lists containing dicts or custom dict instances
-    - Extracts value from (original_key, value) tuples in _store
     """
     # If it's a custom InsensitiveDict type or a regular dict, recurse into its values
     if str(type(obj)) == "<class 'arcgis._impl.common._isd.InsensitiveDict'>" or isinstance(obj, dict):
