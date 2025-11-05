@@ -1,6 +1,8 @@
 from arcgis.geometry import buffer, Geometry, LengthUnits, SpatialReference
 from arcgis.geometry.filters import intersects
 from arcgis.features import GeoAccessor
+from arcgis.map.renderers import SimpleRenderer
+from arcgis.map.symbols import SimpleMarkerSymbolEsriSMS, SimpleMarkerSymbolStyle, SimpleLineSymbolEsriSLS, SimpleLineSymbolStyle
 import pandas as pd
 from sqlite3 import connect
 
@@ -15,7 +17,27 @@ def prepare_traffic(traffic_df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: The prepared traffic DataFrame.
     """
+    # Extract hours, minutes, and seconds
     traffic_df["trip_time"] = pd.to_datetime(traffic_df["trip_time"], format="%Y-%m-%dT%H:%M:%S")
+    traffic_df["hour"] = traffic_df["trip_time"].dt.strftime("%H").astype(int)
+    traffic_df["minute"] = traffic_df["trip_time"].dt.strftime("%M").astype(int)
+    traffic_df["second"] = traffic_df["trip_time"].dt.strftime("%S").astype(int)
+    traffic_df = traffic_df.drop(columns=["trip_time"], axis=1)
+
+    # Fill empty values for vehicle_type
+    traffic_df = traffic_df.fillna({"vehicle_type": "pedestrian"})
+
+    # Convert all vehicle types to lower case
+    traffic_df["vehicle_type"] = traffic_df["vehicle_type"].str.lower()
+
+    # Unique vehicle types
+    vehicle_types = traffic_df["vehicle_type"].unique()
+
+    # Create binary columns
+    for vehicle_type in vehicle_types:
+        traffic_df[vehicle_type] = traffic_df["vehicle_type"].apply(lambda vt: 1 if vt == vehicle_type else 0).astype(int)
+    traffic_df = traffic_df.drop(columns=["vehicle_type"], axis=1)
+    
     return traffic_df
 
 def read_traffic_sql(filepath: str, limit: int) -> pd.DataFrame:
@@ -81,3 +103,20 @@ def read_traffic_features(filepath: str, lon: float, lat: float, meters: float) 
 def fetch_traffic_data(filepath: str, max_record_count: int = 1000) -> pd.DataFrame:
     traffic_df = read_traffic_sql(filepath, max_record_count)
     return GeoAccessor.from_xy(traffic_df, x_column='longitude', y_column='latitude', sr=4326)
+
+def filter_commute_cars(traffic_df: pd.DataFrame) -> pd.DataFrame:
+    return traffic_df.query("car == 1 and 7 < hour and hour < 10")
+
+def generate_car_renderer():
+    return SimpleRenderer(
+        symbol=SimpleMarkerSymbolEsriSMS(
+            style=SimpleMarkerSymbolStyle.esri_sms_circle.value,
+            size=7,
+            outline=SimpleLineSymbolEsriSLS(
+                color=[155, 155, 155, 55],
+                width=0.7,
+                style=SimpleLineSymbolStyle.esri_sls_solid.value,
+            ),
+            color=[255, 0, 0, 55]
+        )
+    )
