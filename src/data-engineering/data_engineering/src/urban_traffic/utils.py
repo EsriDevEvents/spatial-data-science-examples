@@ -1,11 +1,46 @@
+from arcgis.gis import GIS, Item
+from arcgis.features import FeatureLayer
 from arcgis.geometry import buffer, Geometry, LengthUnits, SpatialReference
 from arcgis.geometry.filters import intersects
 from arcgis.features import GeoAccessor
 from arcgis.map.renderers import SimpleRenderer
 from arcgis.map.symbols import SimpleMarkerSymbolEsriSMS, SimpleMarkerSymbolStyle, SimpleLineSymbolEsriSLS, SimpleLineSymbolStyle
+from data_engineering.utils import get_hotcold_layer, get_live_traffic_item
 import pandas as pd
 from sqlite3 import connect
 
+
+def create_map(gis: GIS, location: str = "Ludwig-Erhard-Anlage 1, 60327 Frankfurt am Main, Germany"):
+    """Creates a map centered on the provided location.
+    Args:
+        gis (GIS): An authenticated GIS object.
+        location (str): The location to center the map on.
+
+    Returns:
+        A map centered on the provided location.
+    """
+    map_view = gis.map(location)
+    map_view.basemap.basemap = "osm"
+    map_view.zoom = 17
+    return map_view
+
+def create_traffic_map(gis: GIS):
+    """Creates a map centered on Frankfurt am Main.
+
+    Args:
+        gis (GIS): An authenticated GIS object.
+
+    Returns:
+        A map centered on Frankfurt am Main.
+    """ 
+    traffic_map = create_map(gis, location="Ludwig-Erhard-Anlage 1, 60327 Frankfurt am Main, Germany")
+    hotcold_layer: FeatureLayer = get_hotcold_layer(gis)
+    live_traffic_item: Item = get_live_traffic_item(gis)
+    traffic_map.content.add(live_traffic_item, options={"opacity": 0.7})
+    traffic_map.content.add(hotcold_layer, options={"opacity": 0.7})
+    #traffic_map.zoom_to_layer(hotcold_layer)
+    traffic_map.zoom = 12
+    return traffic_map
 
 def prepare_traffic(traffic_df: pd.DataFrame) -> pd.DataFrame:
     """

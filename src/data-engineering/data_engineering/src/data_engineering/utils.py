@@ -1,10 +1,21 @@
-from arcgis.gis import GIS
-from arcgis.gis import Item
+from arcgis.gis import GIS, Item, Layer
 from arcgis.features import FeatureLayer
 from arcgis.geometry import Envelope, SpatialReference
 from arcgis.geometry.filters import intersects
 import pandas as pd
 
+
+def get_charging_stations_layer(gis: GIS) -> FeatureLayer:
+    """Gets the charging stations feature layer from ArcGIS Online.
+
+    Args:
+        gis (GIS): An authenticated GIS object.
+
+    Returns:
+        The charging stations feature layer.
+    """
+    portal_item: Item = gis.content.get("bc3c97f73d6b4be4921be8560fbc325a")
+    return portal_item.layers[0]
 
 def fetch_charging_stations(gis: GIS, max_record_count: int = 1000) -> pd.DataFrame:
     """Fetches the charging stations from the ArcGIS Online feature service.
@@ -15,10 +26,32 @@ def fetch_charging_stations(gis: GIS, max_record_count: int = 1000) -> pd.DataFr
     Returns:
         A spatially enabled DataFrame containing all charging stations.
     """
-    portal_item: Item = gis.content.get("bc3c97f73d6b4be4921be8560fbc325a")
-    feature_layer: FeatureLayer = portal_item.layers[0]
+    feature_layer: FeatureLayer = get_charging_stations_layer(gis)
     feature_sdf = feature_layer.query(where="1=1", out_fields="*", return_all_records=False, result_record_count=max_record_count, as_df=True)
     return feature_sdf
+
+def get_live_traffic_item(gis: GIS) -> Item:
+    """Gets the live traffic portal item from ArcGIS Online.
+
+    Args:
+        gis (GIS): An authenticated GIS object.
+
+    Returns:
+        The live traffic portal item.
+    """
+    return gis.content.get("ff11eb5b930b4fabba15c47feb130de4")
+
+def get_traffic_accidents_layer(gis: GIS) -> FeatureLayer:
+    """Gets the traffic accidents feature layer from ArcGIS Online.
+
+    Args:
+        gis (GIS): An authenticated GIS object.
+
+    Returns:
+        The traffic accidents feature layer.
+    """
+    portal_item: Item = gis.content.get("027fd014ed184fd78a37b54a68afe892")
+    return portal_item.layers[0]
 
 def fetch_traffic_accidents(gis: GIS, max_record_count: int = 1000) -> pd.DataFrame:
     """Fetches the traffic accidents from the ArcGIS Online feature service.
@@ -26,16 +59,37 @@ def fetch_traffic_accidents(gis: GIS, max_record_count: int = 1000) -> pd.DataFr
     Args:
         gis (GIS): An authenticated GIS object.
     """
-    portal_item: Item = gis.content.get("027fd014ed184fd78a37b54a68afe892")
-    feature_layer: FeatureLayer = portal_item.layers[0]
+    feature_layer: FeatureLayer = get_traffic_accidents_layer(gis)
     feature_sdf = feature_layer.query(where="1=1", out_fields="*", return_all_records=False, result_record_count=max_record_count, as_df=True)
     return feature_sdf
 
+def get_hotcold_layer(gis: GIS) -> FeatureLayer:
+    """Gets the hotcold feature layer from the portal.
+
+    Args:
+        gis (GIS): An authenticated GIS object.
+
+    Returns:
+        The hotcold feature layer.
+    """
+    portal_item: Item = gis.content.get("6ee6272938624808956debfc17fcc958")
+    return portal_item.layers[0]
+
 def fetch_hotcold_features(gis: GIS, spatial_features: pd.DataFrame):
-    # Access the portal item's feature layer
-    item_id = "6ee6272938624808956debfc17fcc958"
-    portal_item = gis.content.get(item_id)
-    feature_layer: FeatureLayer = portal_item.layers[0]
+    """
+    Fetches the hotcold features from a portal feature service
+    that intersect with the provided spatial features.
+
+    Args:
+        gis (GIS): An authenticated GIS object.
+        spatial_features (pd.DataFrame): A spatially enabled DataFrame
+            containing the features to use for spatial filtering.
+
+    Returns:
+        A tuple containing: a FeatureSet of the intersecting hotcold features,
+        and a drawing info of the layer's renderer.
+    """
+    feature_layer: FeatureLayer = get_hotcold_layer(gis)
     
     # Using a geometry filter
     wgs84 = SpatialReference(4326)
