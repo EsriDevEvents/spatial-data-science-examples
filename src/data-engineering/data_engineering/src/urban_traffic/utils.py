@@ -1,11 +1,12 @@
 from arcgis.gis import GIS, Item
-from arcgis.features import FeatureLayer
+from arcgis.features import FeatureLayer, FeatureSet
 from arcgis.geometry import buffer, Geometry, LengthUnits, SpatialReference
 from arcgis.geometry.filters import intersects
 from arcgis.features import GeoAccessor
 from arcgis.map.renderers import SimpleRenderer
 from arcgis.map.symbols import SimpleMarkerSymbolEsriSMS, SimpleMarkerSymbolStyle, SimpleLineSymbolEsriSLS, SimpleLineSymbolStyle
 from data_engineering.utils import get_hotcold_layer, get_live_traffic_item
+import json
 import pandas as pd
 from sqlite3 import connect
 
@@ -138,6 +139,11 @@ def read_traffic_features(filepath: str, lon: float, lat: float, meters: float) 
 def fetch_traffic_data(filepath: str, max_record_count: int = 1000) -> pd.DataFrame:
     traffic_df = read_traffic_sql(filepath, max_record_count)
     return GeoAccessor.from_xy(traffic_df, x_column='longitude', y_column='latitude', sr=4326)
+
+def read_bike_trail(filepath: str) -> pd.DataFrame:
+    with open(filepath, 'r', encoding='utf-8') as file_in:
+        bike_trail_data = json.load(file_in)
+        return FeatureSet.from_geojson(bike_trail_data).sdf
 
 def filter_commute_cars(traffic_df: pd.DataFrame) -> pd.DataFrame:
     return traffic_df.query("car == 1 and 7 < hour and hour < 10")

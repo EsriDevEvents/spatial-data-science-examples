@@ -1,6 +1,6 @@
 from arcgis.gis import GIS
 from data_engineering.utils import fetch_charging_stations, fetch_traffic_accidents
-from urban_traffic.utils import fetch_traffic_data, read_traffic_features
+from urban_traffic.utils import fetch_traffic_data, read_bike_trail, read_traffic_features
 import os
 import pandas as pd
 import unittest
@@ -22,6 +22,10 @@ class TestDataEngineering(unittest.TestCase):
         self._traffic_features_filepath = os.getenv("TRAFFIC_FEATURES")
         if not self._traffic_features_filepath:
             raise ValueError("TRAFFIC_FEATURES environment variable is not set!")
+        
+        self._bike_trail_filepath = os.getenv("BIKE_TRAIL_FILE")
+        if not self._bike_trail_filepath:
+            raise ValueError("BIKE_TRAIL_FILE environment variable is not set!")
 
         self._sample_size = 10
     
@@ -49,6 +53,12 @@ class TestDataEngineering(unittest.TestCase):
         self.assertIsInstance(traffic_features, pd.DataFrame, "Unexpected type returned from the database!")
         self.assertGreater(len(traffic_features), 0, "No traffic features returned from the database!")
         self.assertIsNotNone(traffic_features.spatial, "DataFrame is not spatially enabled!")
+
+    def test_bike_trail_features(self):
+        bike_trail_features: pd.DataFrame = read_bike_trail(self._bike_trail_filepath)
+        self.assertIsInstance(bike_trail_features, pd.DataFrame, "Unexpected type returned from the database!")
+        self.assertGreater(len(bike_trail_features), 0, "No bike trail features returned from the database!")
+        self.assertIsNotNone(bike_trail_features.spatial, "DataFrame is not spatially enabled!")
 
 
 if __name__ == '__main__':
