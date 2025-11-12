@@ -144,6 +144,18 @@ def read_bike_trail(filepath: str) -> pd.DataFrame:
     with open(filepath, 'r', encoding='utf-8') as file_in:
         bike_trail_data = json.load(file_in)
         return FeatureSet.from_geojson(bike_trail_data).sdf
+    
+def explode_bike_trail(filepath: str):
+    with open(filepath, 'r', encoding='utf-8') as file_in:
+        bike_trail_data = json.load(file_in)
+        feature_set = FeatureSet.from_geojson(bike_trail_data)
+        for feature in feature_set.features:
+            geometry = feature.geometry
+            for x, y in geometry.coordinates:
+                yield {
+                    **feature.attributes,
+                    "geometry": Geometry({"x": x, "y": y, "spatialReference": feature_set.spatial_reference})
+                }
 
 def filter_commute_cars(traffic_df: pd.DataFrame) -> pd.DataFrame:
     return traffic_df.query("car == 1 and 7 < hour and hour < 10")

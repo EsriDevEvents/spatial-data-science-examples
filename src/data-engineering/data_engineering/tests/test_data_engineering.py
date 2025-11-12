@@ -1,6 +1,6 @@
 from arcgis.gis import GIS
 from data_engineering.utils import fetch_charging_stations, fetch_traffic_accidents
-from urban_traffic.utils import fetch_traffic_data, read_bike_trail, read_traffic_features
+from urban_traffic.utils import explode_bike_trail, fetch_traffic_data, read_bike_trail, read_traffic_features
 import os
 import pandas as pd
 import unittest
@@ -60,6 +60,9 @@ class TestDataEngineering(unittest.TestCase):
         self.assertGreater(len(bike_trail_features), 0, "No bike trail features returned from the database!")
         self.assertIsNotNone(bike_trail_features.spatial, "DataFrame is not spatially enabled!")
 
+        bike_trail_points = explode_bike_trail(self._bike_trail_filepath)
+        for feature in bike_trail_points:
+            pass
 
 if __name__ == '__main__':
     unittest.main()

@@ -17,18 +17,25 @@ def get_charging_stations_layer(gis: GIS) -> FeatureLayer:
     portal_item: Item = gis.content.get("bc3c97f73d6b4be4921be8560fbc325a")
     return portal_item.layers[0]
 
-def fetch_charging_stations(gis: GIS, max_record_count: int = 1000) -> pd.DataFrame:
+def fetch_charging_stations(gis: GIS, max_record_count: int = 1000, extent: Envelope = None) -> pd.DataFrame:
     """Fetches the charging stations from the ArcGIS Online feature service.
 
     Args:
         gis (GIS): An authenticated GIS object.
+        max_record_count (int, optional): The maximum number of records to fetch. Defaults to 1000.
+        extent (Envelope, optional): An optional spatial extent to filter the charging stations.
 
     Returns:
         A spatially enabled DataFrame containing all charging stations.
     """
     feature_layer: FeatureLayer = get_charging_stations_layer(gis)
-    feature_sdf = feature_layer.query(where="1=1", out_fields="*", return_all_records=False, result_record_count=max_record_count, as_df=True)
-    return feature_sdf
+    if extent:
+        spatial_filter = intersects(extent, sr=extent.spatial_reference)
+
+        # Query the intersecting features
+        return feature_layer.query(where="1=1", out_fields="*", return_all_records=False, result_record_count=max_record_count,geometry_filter=spatial_filter, as_df=True)
+    else:
+        return feature_layer.query(where="1=1", out_fields="*", return_all_records=False, result_record_count=max_record_count, as_df=True)
 
 def get_live_traffic_item(gis: GIS) -> Item:
     """Gets the live traffic portal item from ArcGIS Online.
