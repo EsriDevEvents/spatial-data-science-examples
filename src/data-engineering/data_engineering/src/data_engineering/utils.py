@@ -119,6 +119,28 @@ def fetch_hotcold_features(gis: GIS, spatial_features: pd.DataFrame):
     feature_set = feature_layer.query(where="1=1", out_fields="*", geometry_filter=spatial_filter)
     return feature_set, {"renderer": convert_internal_dict(feature_layer.renderer)}
 
+def fetch_hottest_features_by_extent(gis: GIS, extent: Envelope):
+    """
+    Fetches the hot features from a portal feature service
+    that intersect with the provided extent.
+
+    Args:
+        gis (GIS): An authenticated GIS object.
+        extent (Envelope, optional): A spatial extent to filter the features.
+
+    Returns:
+        A tuple containing: a FeatureSet of the intersecting hotcold features,
+        and a drawing info of the layer's renderer.
+    """
+    feature_layer: FeatureLayer = get_hotcold_layer(gis)
+    
+    # Using a geometry filter
+    spatial_filter = intersects(extent, sr=extent.spatial_reference)
+
+    # Query the intersecting features
+    feature_set = feature_layer.query(where="Gi_Bin>=3", out_fields="*", geometry_filter=spatial_filter)
+    return feature_set, {"renderer": convert_internal_dict(feature_layer.renderer)}
+
 def convert_internal_dict(obj):
     """
     Recursively convert custom InsensitiveDict instances to plain Python dicts.
