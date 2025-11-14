@@ -1,6 +1,6 @@
 from arcgis.gis import GIS, Item
 from arcgis.features import FeatureLayer, FeatureSet
-from arcgis.geometry import buffer, Geometry, LengthUnits, SpatialReference
+from arcgis.geometry import buffer, Envelope, Geometry, LengthUnits, SpatialReference
 from arcgis.geometry.filters import intersects
 from arcgis.features import GeoAccessor
 from arcgis.map.renderers import SimpleRenderer
@@ -8,6 +8,12 @@ from arcgis.map.symbols import SimpleMarkerSymbolEsriSMS, SimpleMarkerSymbolStyl
 from data_engineering.utils import get_hotcold_layer, get_live_traffic_item
 import json
 import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
 from sqlite3 import connect
 
 
@@ -75,6 +81,21 @@ def prepare_traffic(traffic_df: pd.DataFrame) -> pd.DataFrame:
     traffic_df = traffic_df.drop(columns=["vehicle_type"], axis=1)
     
     return traffic_df
+
+def read_traffic_accidents_features_by_extent(filepath: str, extent: Envelope) -> pd.DataFrame:
+    """
+    Reads traffic accidents from a local feature class.
+
+    Args:
+        filepath (str): The filepath to the local feature class.
+        extent (Envelope): A spatial extent to filter the traffic accidents.
+
+    Returns:
+        pd.DataFrame: The traffic accidents DataFrame.
+    """
+    spatial_filter = intersects(extent, sr=extent.spatial_reference)
+    fields = ["uwochentag", "ustunde", "ukategorie", "uart", "utyp1", "ulichtverh", "ist_strasse"]
+    return GeoAccessor.from_featureclass(filepath, fields=fields, spatial_filter=spatial_filter)
 
 def read_traffic_sql(filepath: str, limit: int) -> pd.DataFrame:
     with connect(filepath) as connection:
@@ -173,3 +194,63 @@ def generate_car_renderer():
             color=[255, 0, 0, 55]
         )
     )
+
+def generate_routes_renderer():
+    return SimpleRenderer(
+        symbol=SimpleLineSymbolEsriSLS(
+            color=[0, 204, 102, 155],
+            width=7.5,
+            style=SimpleLineSymbolStyle.esri_sls_solid.value,
+        )
+    )
+
+def evaluate_model(df: pd.DataFrame, categorical_cols: list[str], numeric_cols: list[str], target_col: str) -> Pipeline:
+    # Features and target
+    X = df[categorical_cols + numeric_cols]
+    y = df[target_col]
+
+    # Preprocessing
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
+            ("num", StandardScaler(), numeric_cols)
+        ]
+    )
+
+    # Pipeline with RandomForest
+    model = Pipeline(steps=[
+        ("preprocessor", preprocessor),
+        ("classifier", RandomForestClassifier(n_estimators=100, random_state=42))
+    ])
+
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+    # Fit model
+    model.fit(X_train, y_train)
+
+    # Predict
+    y_pred = model.predict(X_test)
+
+    # Evaluate
+    print(f"Accuracy: {accuracy_score(y_test, y_pred):.2f}")
+    print("Classification Report:\n", classification_report(y_test, y_pred))
+    
+    return model
+
+def prepare_traffic_accidents(traffic_accidents: pd.DataFrame) -> pd.DataFrame:
+    # Define mapping for grouping
+    group_mapping = {
+        "Unfall im Längsverkehr": "Längsverkehr",
+        "Fahrunfall": "Längsverkehr",
+        "Unfall durch ruhenden Verkehr": "Längsverkehr",
+        "Einbiegen / Kreuzen-Unfall": "Kreuzung/Abbiegen",
+        "Abbiegeunfall": "Kreuzung/Abbiegen",
+        "Überschreitenunfall": "Sonstige",
+        "sonstiger Unfall": "Sonstige"
+    }
+    
+    # Apply mapping to create new target column
+    prepared_traffic_accidents = traffic_accidents.copy()
+    prepared_traffic_accidents["utyp1_grouped"] = traffic_accidents["utyp1"].map(group_mapping)
+    return prepared_traffic_accidents, "utyp1_grouped"
