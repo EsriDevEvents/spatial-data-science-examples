@@ -106,11 +106,6 @@ def fetch_hotcold_features(gis: GIS, spatial_features: pd.DataFrame):
     
     # Using a geometry filter
     wgs84 = SpatialReference(4326)
-    """
-    spatial_fset = spatial_features.spatial.to_featureset()
-    points = [list(Point(feature.geometry).coordinates()) for feature in spatial_fset.features]
-    multi_point = MultiPoint({"points": points, "spatialReference": wgs84})
-    """
     xmin, ymin, xmax, ymax = spatial_features.spatial.full_extent
     extent = Envelope({
         "xmin": xmin,
