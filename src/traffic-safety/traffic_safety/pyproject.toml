@@ -1,0 +1,16 @@
+[project]
+name = "traffic_safety"
+version = "0.1.0"
+description = "Frankfurt Traffic Safety showcase: hotspot risk analysis using ArcGIS API for Python"
+readme = "README.md"
+requires-python = ">=3.11, <3.14"
+
+dependencies = [
+    "arcgis>=2.4",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

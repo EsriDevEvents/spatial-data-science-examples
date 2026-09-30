@@ -17,8 +17,14 @@ an independent showcase — do not assume shared build/test tooling across them.
     (`explore_data()`, `explore_traffic()`).
   - `notebooks/UrbanDigitalTwin_Frankfurt.ipynb` — narrative demo notebook.
 - `src/traffic-safety/` — Frankfurt Traffic Safety showcase for EDTS 2026
-  (currently only a README describing planned hot/cold spot analysis and
-  agentic AI recommendation workflow; implementation not yet present).
+  (hot/cold spot analysis + planned agentic AI recommendation workflow).
+  `traffic_safety/` is a uv-managed Python project (same `src/` layout as
+  `data-engineering`) whose `utils.py` reads yearly Hot Spot Analysis
+  (Getis-Ord Gi*) feature classes from a local file geodatabase and spatially
+  aligns their `Gi_Bin` values into one wide DataFrame (`Gi_Bin_<feature_class>`
+  columns), since bin polygons can differ slightly between years and cannot be
+  joined by key. Requires a `HOTSPOT_GDB` env var for its tests
+  (`tests/test_traffic_safety.py`).
 
 ## Environment setup
 
