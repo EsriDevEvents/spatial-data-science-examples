@@ -17,14 +17,22 @@ an independent showcase — do not assume shared build/test tooling across them.
     (`explore_data()`, `explore_traffic()`).
   - `notebooks/UrbanDigitalTwin_Frankfurt.ipynb` — narrative demo notebook.
 - `src/traffic-safety/` — Frankfurt Traffic Safety showcase for EDTS 2026
-  (hot/cold spot analysis + planned agentic AI recommendation workflow).
+  (hot/cold spot risk analysis + planned agentic AI recommendation workflow).
   `traffic_safety/` is a uv-managed Python project (same `src/` layout as
-  `data-engineering`) whose `utils.py` reads yearly Hot Spot Analysis
-  (Getis-Ord Gi*) feature classes from a local file geodatabase and spatially
-  aligns their `Gi_Bin` values into one wide DataFrame (`Gi_Bin_<feature_class>`
-  columns), since bin polygons can differ slightly between years and cannot be
-  joined by key. Requires a `HOTSPOT_GDB` env var for its tests
-  (`tests/test_traffic_safety.py`).
+  `data-engineering`) whose `utils.py` implements the full multi-year hotspot
+  pipeline: read every yearly Hot Spot Analysis (Getis-Ord Gi*) feature class
+  from a local file geodatabase (`list_feature_classes`/`read_feature_classes`),
+  spatially align their `Gi_Bin` values into one wide DataFrame
+  (`combine_yearly_hotspots`/`combine_hotspot_bins`, since bin polygons can
+  differ slightly between years and cannot be joined by key — pick a spatial
+  join backend via `method`: `"arcpy"`, `"sedf"`, or pure-`"python"`),
+  summarize across years into a NaN-safe median/min/max plus a
+  `Gi_Bin_years_observed` confidence count (`summarize_hotspot_bins`), filter
+  to the highest-confidence locations (`filter_hotspot_bins`), and publish the
+  result as a hosted feature layer with a shared confidence-based renderer
+  (`publish_hotspot_layer`/`generate_hotspots_renderer`). See
+  `notebooks/TrafficSafety.ipynb` for the end-to-end workflow. Requires a
+  `HOTSPOT_GDB` env var for its tests (`tests/test_traffic_safety.py`).
 
 ## Environment setup
 

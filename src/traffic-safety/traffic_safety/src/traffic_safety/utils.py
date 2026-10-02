@@ -444,6 +444,71 @@ def summarize_hotspot_bins(combined_df: pd.DataFrame, bin_field: str = "Gi_Bin",
 
     return summarized
 
+
+def filter_hotspot_bins(summarized_df: pd.DataFrame, bin_field: str = "Gi_Bin", summary_column: str = "median", min_value: float = None, max_value: float = None) -> pd.DataFrame:
+    """Filters a summarized hotspot DataFrame by its summary Gi_Bin value.
+
+    Returns an explicit copy (not a view) of the filtered rows, so the
+    result can be safely mutated further (e.g. by `.spatial.to_featureset()`
+    or `.spatial.to_featurelayer()`) without triggering a pandas
+    `SettingWithCopyWarning`.
+
+    Args:
+        summarized_df (pd.DataFrame): A DataFrame produced by
+            `summarize_hotspot_bins`.
+        bin_field (str, optional): The Gi_Bin field prefix used by
+            `summarize_hotspot_bins`. Defaults to "Gi_Bin".
+        summary_column (str, optional): Which summary column to filter on:
+            one of "median", "min", or "max" (matching the columns added by
+            `summarize_hotspot_bins`). Defaults to "median".
+        min_value (float, optional): The minimum (inclusive) value to keep.
+            Defaults to None (no lower bound).
+        max_value (float, optional): The maximum (inclusive) value to keep.
+            Defaults to None (no upper bound).
+
+    Returns:
+        pd.DataFrame: An independent copy of the matching rows.
+    """
+    column = f"{bin_field}_{summary_column}"
+    values = summarized_df[column]
+
+    if min_value is not None and max_value is not None:
+        mask = values.between(min_value, max_value)
+    elif min_value is not None:
+        mask = values >= min_value
+    elif max_value is not None:
+        mask = values <= max_value
+    else:
+        mask = pd.Series(True, index=summarized_df.index)
+
+    return summarized_df[mask].copy()
+
+
+def publish_hotspot_layer(gis, df: pd.DataFrame, title: str, field_name: str = "Gi_Bin_median", tags: list[str] = None, folder: str = None):
+    """Publishes a spatially enabled DataFrame as a hosted feature layer with a hotspot renderer.
+
+    Args:
+        gis (GIS): An authenticated GIS object to publish to.
+        df (pd.DataFrame): The spatially enabled DataFrame to publish (e.g.
+            the result of `filter_hotspot_bins`).
+        title (str): The title of the hosted feature layer item.
+        field_name (str, optional): The field the hotspot renderer (see
+            `generate_hotspots_renderer`) should be based on. Defaults to
+            "Gi_Bin_median".
+        tags (list[str], optional): Tags to apply to the published item.
+        folder (str, optional): The portal content folder to publish into.
+
+    Returns:
+        Item: The published hosted feature layer item, with its renderer
+        set via `generate_hotspots_renderer(field_name)`.
+    """
+    item = df.spatial.to_featurelayer(title=title, gis=gis, tags=tags, folder=folder)
+
+    layer = item.layers[0]
+    layer.manager.update_definition({"drawingInfo": {"renderer": generate_hotspots_renderer(field_name=field_name)}})
+
+    return item
+
 def generate_hotspots_renderer(field_name: str = "GI_Bin"):
         """Create an ArcGIS class-breaks renderer for Gi* hotspot analysis.
 
