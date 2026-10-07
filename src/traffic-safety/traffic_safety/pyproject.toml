@@ -9,6 +9,14 @@ dependencies = [
     "arcgis>=2.4",
 ]
 
+[project.optional-dependencies]
+# Required only for traffic_safety.governance.OllamaLLMClient (local/sovereign
+# inference demo in the Trusted GeoAI session). Not needed to run the
+# Spatial Data Science or Spatial Grounding sessions.
+local-inference = [
+    "ollama>=0.4",
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
