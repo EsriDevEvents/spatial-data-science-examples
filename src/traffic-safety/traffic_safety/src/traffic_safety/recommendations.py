@@ -18,6 +18,7 @@ import os
 from dataclasses import dataclass
 from typing import Protocol
 
+import numpy as np
 import pandas as pd
 from arcgis.features import FeatureLayer
 from arcgis.gis import GIS
@@ -82,7 +83,12 @@ def get_top_risk_locations(layer: FeatureLayer, field_name: str = "Gi_Bin_median
         pd.DataFrame: A spatially enabled DataFrame with the `top_n` rows
         sorted by `field_name` in descending order.
     """
-    feature_set = layer.query(where=where, out_fields="*", order_by_fields=f"{field_name} DESC", result_record_count=top_n)
+    # A secondary, unique tie-breaker (OBJECTID) is required alongside
+    # field_name: without it, ORDER BY on a field with repeated values (e.g.
+    # tied risk scores) does not guarantee the same top_n rows/order across
+    # repeated calls, silently desyncing any OBJECTID-keyed state (such as
+    # `context_geometries`) built from an earlier call.
+    feature_set = layer.query(where=where, out_fields="*", order_by_fields=f"{field_name} DESC, OBJECTID ASC", result_record_count=top_n)
     return feature_set.sdf
 
 
@@ -151,6 +157,7 @@ def get_buffer_context(gis: GIS, context_sdf: pd.DataFrame, geometry: dict, dist
     buffered = buffer(
         geometries=[geometry],
         in_sr=spatial_reference,
+        out_sr={"wkid": 4326},
         distances=distance_meters,
         unit=9001,  # esriSRUnit_Meter
         geodesic=True,
@@ -158,73 +165,120 @@ def get_buffer_context(gis: GIS, context_sdf: pd.DataFrame, geometry: dict, dist
     )[0]
     buffered_geometry = Geometry(buffered)
 
+    # Force WGS84 output (out_sr above) so every geometry this module hands
+    # around - buffer and service area alike - is consistently WGS84,
+    # matching plain GeoJSON's own default assumption.
+    buffered_geometry["spatialReference"] = {"wkid": 4326}
+
     mask = context_sdf["SHAPE"].apply(lambda shape: buffered_geometry.contains(Geometry(shape)))
     matches = context_sdf[mask].copy()
     detail = {"buffer_meters": distance_meters, "buffer_geometry": dict(buffered_geometry)}
     return matches, detail
 
 
-def get_proximity_context(gis: GIS, risk_locations: pd.DataFrame, context_fset, measurement_type: str = "Walking Time", max_count: int = 3, search_cutoff: float = 15, search_cutoff_units: str = "Minutes") -> tuple[pd.DataFrame, dict]:
-    """Finds context features reachable from risk locations via real routing.
+def get_service_area_context(gis: GIS, context_sdf: pd.DataFrame, geometry: dict, travel_mode: str = "Walking Time", break_minutes: float = 15) -> tuple[pd.DataFrame, dict]:
+    """Finds context features within a walking-time service area of a risk location.
 
     This is the richer of the two spatial grounding strategies shown side
     by side in the demonstration: instead of a straight-line buffer, it
-    measures actual travel time or distance along the street network using
-    `arcgis.features.use_proximity.find_nearest`, which calls an ArcGIS
-    Location Platform routing service and consumes credits.
+    computes a real street-network service area polygon via
+    `arcgis.network.analysis.generate_service_areas`, which calls an ArcGIS
+    Location Platform routing service and consumes credits. Mirrors
+    `get_buffer_context`'s shape exactly (same `(gis, context_sdf, geometry,
+    ...)` signature, same `(matches, detail)` return with a `*_geometry` key)
+    so either strategy can be swapped in for the other without touching the
+    rest of the pipeline.
 
     Args:
         gis (GIS): An authenticated GIS with the Routing / Network Analysis
             privilege enabled (e.g. an ArcGIS Location Platform API key).
-        risk_locations (pd.DataFrame): The risk locations to route from, as
-            returned by `get_top_risk_locations` (used as the `near_layer`'s
-            origins, i.e. `analysis_layer`).
-        context_fset: The context features to route to (e.g. the schools
-            `FeatureSet` from a local GeoJSON file), used as `near_layer`.
-            Accepted directly without publishing - both a `FeatureSet` and a
-            spatially enabled DataFrame are valid "Feature Input" for this
-            tool.
-        measurement_type (str, optional): The exact ArcGIS travel mode
-            literal, e.g. "Walking Time", "Walking Distance", "Driving Time".
+        context_sdf (pd.DataFrame): A spatially enabled DataFrame of context
+            features (e.g. schools), such as `FeatureSet.sdf`.
+        geometry (dict): An Esri JSON geometry for the risk location to
+            route from. Service areas require a point origin, so if this is
+            a polygon (e.g. a Gi_Bin hotspot bin), its centroid is used as
+            the facility location.
+        travel_mode (str, optional): The exact travel mode name registered
+            for your organization/ArcGIS Location Platform account - this is
+            account-specific, not a fixed global enum, so confirm the exact
+            literal via `arcgis.network.analysis.get_travel_modes(gis)` if
+            this is rejected (error AO_100145, "invalid travel mode").
             Defaults to "Walking Time".
-        max_count (int, optional): Maximum number of nearest features to
-            find per risk location. Defaults to 3.
-        search_cutoff (float, optional): Only consider features within this
-            range. Defaults to 15.
-        search_cutoff_units (str, optional): Units for `search_cutoff`, e.g.
-            "Minutes" or "Meters". Defaults to "Minutes".
+        break_minutes (float, optional): The size of the service area in
+            minutes of travel time. Defaults to 15.
 
     Returns:
-        tuple[pd.DataFrame, dict]: A DataFrame of nearest-feature results
-        (one row per match, with `IN_FID`/`NEAR_FID`/`NEAR_DIST`/`NEAR_RANK`
-        columns), and a detail dict summarizing the overall query
-        (`measurement_type`, `search_cutoff`, `search_cutoff_units`).
+        tuple[pd.DataFrame, dict]: The context features within the service
+        area, and a detail dict (`{"travel_mode": ..., "break_minutes": ...,
+        "service_area_geometry": ...}`). `service_area_geometry` is the Esri
+        JSON of the service area polygon itself, so it can be handed over as
+        one entry of `context_geometries` to `rank_recommendations`, which
+        will re-query the (live, published) context layer with it - keeping
+        a single source of truth for how context is retrieved for a
+        recommendation.
     """
-    from arcgis.features.use_proximity import find_nearest
+    from arcgis.features import Feature, FeatureSet
+    from arcgis.geometry import Geometry, Point
+    from arcgis.network.analysis import generate_service_areas
 
-    nearest_layer, _connecting_lines_layer = find_nearest(
-        analysis_layer=risk_locations,
-        near_layer=context_fset,
-        measurement_type=measurement_type,
-        max_count=max_count,
-        search_cutoff=search_cutoff,
-        search_cutoff_units=search_cutoff_units,
+    spatial_reference = geometry.get("spatialReference", {"wkid": 4326})
+    origin_geometry = Geometry(geometry)
+    if origin_geometry.type.lower() == "point":
+        origin_point = origin_geometry
+    else:
+        # Polygon.centroid returns a plain (x, y) tuple, not a Point object.
+        x, y = origin_geometry.centroid
+        origin_point = Point({"x": x, "y": y, "spatialReference": spatial_reference})
+
+    facilities = FeatureSet(
+        features=[{"geometry": dict(origin_point), "attributes": {"ObjectID": 1}}],
+        geometry_type="esriGeometryPoint",
+        spatial_reference=spatial_reference,
+    )
+
+    result = generate_service_areas(
+        facilities=facilities,
+        break_values=[break_minutes],
+        break_units="Minutes",
+        travel_mode=travel_mode,
         gis=gis,
     )
-    nearest_df = nearest_layer.sdf
+    service_area_fset = result.service_areas
+    service_area_sdf = service_area_fset.sdf
+    service_area_geometry = dict(Geometry(service_area_sdf.iloc[0]["SHAPE"]))
+    mask = context_sdf["SHAPE"].apply(lambda shape: Geometry(service_area_geometry).contains(Geometry(shape)))
+    matches = context_sdf[mask].copy()
     detail = {
-        "measurement_type": measurement_type,
-        "search_cutoff": search_cutoff,
-        "search_cutoff_units": search_cutoff_units,
+        "travel_mode": travel_mode,
+        "break_minutes": break_minutes,
+        "service_area_geometry": service_area_geometry,
     }
-    return nearest_df, detail
+    return matches, detail
+
+
+
+def _json_safe(value):
+    """Converts a single property value to a native, `json`-serializable type.
+
+    Spatially enabled DataFrames store attributes as numpy scalars (e.g.
+    `numpy.int64` for `OBJECTID`/`loc_id`), which the stdlib `json` module
+    cannot serialize natively. Without this, `json.dump`'s `default=str`
+    fallback silently stringifies them (e.g. `loc_id` 2 -> "2"), which then
+    breaks any later `dict.get(location["OBJECTID"])` lookup against the
+    reloaded data, since the live query still returns numeric OBJECTIDs.
+    """
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value)
+    return value
 
 
 def _sdf_to_geojson(sdf: pd.DataFrame) -> dict:
     """Converts a spatially enabled DataFrame into a plain GeoJSON FeatureCollection dict."""
     features = []
     for _, row in sdf.iterrows():
-        properties = {column: value for column, value in row.items() if column != "SHAPE"}
+        properties = {column: _json_safe(value) for column, value in row.items() if column != "SHAPE"}
         features.append({
             "type": "Feature",
             "geometry": row["SHAPE"].__geo_interface__,
@@ -236,7 +290,7 @@ def _sdf_to_geojson(sdf: pd.DataFrame) -> dict:
 def persist_context_layer(context_sdf: pd.DataFrame, name: str, persist_dir: str = "/temp") -> str:
     """Writes a spatially enabled DataFrame to disk as a single GeoJSON file.
 
-    Both `get_buffer_context` and `get_proximity_context` return a
+    Both `get_buffer_context` and `get_service_area_context` return a
     spatially enabled DataFrame, so both can be persisted the same way -
     useful for comparing the two strategies side by side with the audience,
     or for re-opening the exact context used for a given recommendation.
@@ -292,6 +346,9 @@ def load_context_layer(path: str) -> pd.DataFrame:
     return FeatureSet.from_geojson(geojson).sdf
 
 
+
+
+
 def context_geometries_to_sdf(context_geometries: dict) -> pd.DataFrame:
     """Converts a `context_geometries` mapping into a spatially enabled DataFrame.
 
@@ -337,7 +394,9 @@ def context_geometries_from_sdf(sdf: pd.DataFrame) -> dict:
     Returns:
         dict: Mapping of location id -> Esri JSON geometry.
     """
-    return {row["loc_id"]: dict(row["SHAPE"]) for _, row in sdf.iterrows()}
+    # int(...) guards against files persisted before the _json_safe fix,
+    # where loc_id was stringified by json.dump's default=str fallback.
+    return {int(row["loc_id"]): dict(row["SHAPE"]) for _, row in sdf.iterrows()}
 
 
 def persist_context_geometries(context_geometries: dict, name: str = "context_geometries", persist_dir: str = "/temp") -> str:
@@ -394,8 +453,8 @@ def build_evidence_package(location: pd.Series, context: pd.DataFrame = None, bi
             summarized risk location produced by
             `traffic_safety.utils.summarize_hotspot_bins`.
         context (pd.DataFrame, optional): Nearby context features, from
-            either `get_buffer_context` or `get_proximity_context` (or the
-            lower-level `get_spatial_context`). Defaults to None (no
+            either `get_buffer_context` or `get_service_area_context` (or
+            the lower-level `get_spatial_context`). Defaults to None (no
             additional context).
         bin_field (str, optional): The Gi_Bin field prefix. Defaults to
             "Gi_Bin".
@@ -405,8 +464,8 @@ def build_evidence_package(location: pd.Series, context: pd.DataFrame = None, bi
             location, rather than silently mixed. Defaults to None.
         context_detail (dict, optional): Method-specific supporting figures,
             e.g. `{"buffer_meters": 200}` from `get_buffer_context` or
-            `{"measurement_type": "Walking Time", ...}` from
-            `get_proximity_context`. Defaults to None (empty dict).
+            `{"travel_mode": "Walking Time", "break_minutes": 15}` from
+            `get_service_area_context`. Defaults to None (empty dict).
         persist_dir (str, optional): If given and `context` is a spatially
             enabled DataFrame, writes it to this directory via
             `persist_context_layer` and records the resulting path on the
@@ -460,7 +519,7 @@ def generate_recommendation(evidence: dict, llm_client: LLMClient = None) -> dic
     return {**evidence, "recommendation": llm_client.generate(prompt)}
 
 
-def rank_recommendations(risk_layer: FeatureLayer, context_layer: FeatureLayer = None, context_geometries: dict = None, field_name: str = "Gi_Bin_median", top_n: int = 5, llm_client: LLMClient = None) -> list[dict]:
+def rank_recommendations(risk_layer: FeatureLayer, context_layer: FeatureLayer = None, context_geometries: dict = None, context_lookup: dict = None, context_method: str = None, field_name: str = "Gi_Bin_median", top_n: int = 5, llm_client: LLMClient = None) -> list[dict]:
     """Produces ranked, explainable recommendations for the top risk locations.
 
     This is the end-to-end entry point demonstrated in
@@ -468,13 +527,34 @@ def rank_recommendations(risk_layer: FeatureLayer, context_layer: FeatureLayer =
     gather spatial context for each location, and generate a recommendation
     with full supporting evidence for every result.
 
+    Supports two ways of supplying context, so the buffer and service-area
+    strategies can share this same ranking path:
+
+    - `context_layer` + `context_geometries`: re-queries `context_layer` per
+      location with a search-area geometry (the buffer polygon from
+      `get_buffer_context`, or the service area polygon from
+      `get_service_area_context` - both return a geometry the same way).
+      Use this for either strategy.
+    - `context_lookup`: a mapping of `OBJECTID` to an already-resolved
+      context DataFrame, for cases where context was resolved up front with
+      no per-location search-area geometry to re-query with. Takes
+      precedence over `context_layer`/`context_geometries` when given.
+
     Args:
         risk_layer (FeatureLayer): The published traffic safety risk layer.
         context_layer (FeatureLayer, optional): An additional feature layer
             used to retrieve spatial context per location. Defaults to None.
         context_geometries (dict, optional): A mapping of `OBJECTID` to the
             Esri JSON geometry (e.g. a buffer) to use for that location's
-            context query. Required if `context_layer` is provided.
+            context query. Required if `context_layer` is provided and
+            `context_lookup` is not.
+        context_lookup (dict, optional): A mapping of `OBJECTID` to a
+            pre-resolved context DataFrame for that location. Bypasses
+            `context_layer`/`context_geometries` entirely when given.
+            Defaults to None.
+        context_method (str, optional): How context was derived - "buffer"
+            or "proximity" - surfaced on each evidence package. Defaults to
+            None.
         field_name (str, optional): The confidence/risk field to rank by.
             Defaults to "Gi_Bin_median".
         top_n (int, optional): The number of locations to generate
@@ -491,12 +571,14 @@ def rank_recommendations(risk_layer: FeatureLayer, context_layer: FeatureLayer =
     recommendations = []
     for _, location in top_locations.iterrows():
         context = None
-        if context_layer is not None and context_geometries is not None:
+        if context_lookup is not None:
+            context = context_lookup.get(location.get("OBJECTID"))
+        elif context_layer is not None and context_geometries is not None:
             geometry = context_geometries.get(location.get("OBJECTID"))
             if geometry is not None:
                 context = get_spatial_context(context_layer, geometry)
 
-        evidence = build_evidence_package(location, context=context)
+        evidence = build_evidence_package(location, context=context, context_method=context_method)
         recommendations.append(generate_recommendation(evidence, llm_client=llm_client))
 
     return recommendations
