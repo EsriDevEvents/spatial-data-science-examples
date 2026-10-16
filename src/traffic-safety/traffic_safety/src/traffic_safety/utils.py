@@ -484,7 +484,7 @@ def filter_hotspot_bins(summarized_df: pd.DataFrame, bin_field: str = "Gi_Bin", 
     return summarized_df[mask].copy()
 
 
-def publish_hotspot_layer(gis, df: pd.DataFrame, title: str, field_name: str = "Gi_Bin_median", tags: list[str] = None, folder: str = None):
+def publish_hotspot_layer(gis, df: pd.DataFrame, title: str, field_name: str = "Gi_Bin_median", tags: str = None, folder: str = None):
     """Publishes a spatially enabled DataFrame as a hosted feature layer with a hotspot renderer.
 
     Args:
@@ -495,7 +495,7 @@ def publish_hotspot_layer(gis, df: pd.DataFrame, title: str, field_name: str = "
         field_name (str, optional): The field the hotspot renderer (see
             `generate_hotspots_renderer`) should be based on. Defaults to
             "Gi_Bin_median".
-        tags (list[str], optional): Tags to apply to the published item.
+        tags (str, optional): Tags to apply to the published item.
         folder (str, optional): The portal content folder to publish into.
 
     Returns:
